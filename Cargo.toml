@@ -1,0 +1,7 @@
+[package]
+name = "siso"
+version = "0.1.0"
+authors = ["Nicolas Froidure <nicolas.froidure@insertafter.com>"]
+
+[dependencies]
+regex = "1.0.4"
