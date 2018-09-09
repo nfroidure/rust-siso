@@ -3,15 +3,15 @@ use regex::Regex;
 use std::error;
 use std::fmt;
 
-pub struct Siso {
-    route: Route,
+pub struct Siso<T: Clone + PartialEq> {
+    route: Route<T>,
 }
 
-impl Siso {
+impl<T: Clone + PartialEq> Siso<T> {
     pub fn register(
         &mut self,
         path_nodes: &[PathNode],
-        value: RouteValue,
+        value: RouteValue<T>,
     ) -> Result<(), SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for registering a value...");
@@ -19,14 +19,14 @@ impl Siso {
         self.route.register(path_nodes, value)
     }
 
-    pub fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue, SisoError> {
+    pub fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue<T>, SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for finding a value...");
         }
         self.route.find(path_nodes)
     }
 
-    pub fn new() -> Siso {
+    pub fn new() -> Siso<T> {
         Siso {
             route: Route::new(PathNode::PathPart(String::from("[root]")), None),
         }
@@ -34,14 +34,14 @@ impl Siso {
 }
 
 #[derive(Debug)]
-struct Route {
+struct Route<T: Clone + PartialEq> {
     node: PathNode,
-    routes: Vec<Route>,
-    value: RouteValue,
+    routes: Vec<Route<T>>,
+    value: RouteValue<T>,
 }
 
-impl Route {
-    fn register(&mut self, path_nodes: &[PathNode], value: RouteValue) -> Result<(), SisoError> {
+impl<T: Clone + PartialEq> Route<T> {
+    fn register(&mut self, path_nodes: &[PathNode], value: RouteValue<T>) -> Result<(), SisoError> {
         let path_node = &path_nodes[0];
         let is_leaf_path_node = path_nodes.len() == 1;
         let index = self.routes.iter()
@@ -66,7 +66,7 @@ impl Route {
             self.routes[index].register(&path_nodes[1..], value)
         }
     }
-    fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue, SisoError> {
+    fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue<T>, SisoError> {
         for a_route in &self.routes {
             if path_nodes[0] == a_route.node {
                 if path_nodes.len() == 1 {
@@ -81,7 +81,7 @@ impl Route {
         })
     }
 
-    fn new(node: PathNode, value: Option<RouteValue>) -> Route {
+    fn new(node: PathNode, value: Option<RouteValue<T>>) -> Route<T> {
         Route {
             routes: Vec::new(),
             node,
@@ -92,15 +92,15 @@ impl Route {
 
 // TODO: Allow generic value instead of strings only
 #[derive(Debug, Clone)]
-pub enum RouteValue {
-    Value(String),
+pub enum RouteValue<T: Clone + PartialEq> {
+    Value(T),
     None,
 }
 
 // Here we intentionnally want Node != None since no value for the path x
 // is not the same concept that no value for the path y
-impl PartialEq for RouteValue {
-    fn eq(&self, other: &RouteValue) -> bool {
+impl<T: Clone + PartialEq> PartialEq for RouteValue<T> {
+    fn eq(&self, other: &RouteValue<T>) -> bool {
         match self {
             RouteValue::Value(self_value) => match other {
                 RouteValue::Value(other_value) => self_value == other_value,
@@ -187,6 +187,13 @@ mod tests {
             PathNode::PathPart(String::from("foo")),
             PathNode::PathPart(String::from("lol")),
         ];
+        let route3 = vec![
+            PathNode::PathPattern(PathPattern {
+                name: String::from("foo"),
+                pattern: Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap()
+            }),
+            PathNode::PathPart(String::from("lol")),
+        ];
         let no_route = vec![
             PathNode::PathPart(String::from("no")),
             PathNode::PathPart(String::from("thing")),
@@ -202,6 +209,12 @@ mod tests {
         assert_eq!(
             router
                 .register(route2.as_slice(), RouteValue::Value(String::from("test2")))
+                .unwrap(),
+            ()
+        );
+        assert_eq!(
+            router
+                .register(route3.as_slice(), RouteValue::Value(String::from("test3")))
                 .unwrap(),
             ()
         );
