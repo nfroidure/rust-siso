@@ -2,9 +2,17 @@ extern crate regex;
 use regex::Regex;
 use std::error;
 use std::fmt;
+use std::collections::HashMap;
 
 pub struct Siso<T: Clone + PartialEq> {
     route: Route<T>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SisoResult<T: Clone + PartialEq> {
+    nodes: Vec<&'static str>,
+    values: HashMap<String, bool>,
+    handler: RouteValue<T>,
 }
 
 impl<T: Clone + PartialEq> Siso<T> {
@@ -19,7 +27,7 @@ impl<T: Clone + PartialEq> Siso<T> {
         self.route.register(path_nodes, value)
     }
 
-    pub fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue<T>, SisoError> {
+    pub fn find(&self, path_nodes: &[PathNode]) -> Result<SisoResult<T>, SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for finding a value...");
         }
@@ -66,11 +74,15 @@ impl<T: Clone + PartialEq> Route<T> {
             self.routes[index].register(&path_nodes[1..], value)
         }
     }
-    fn find(&self, path_nodes: &[PathNode]) -> Result<RouteValue<T>, SisoError> {
+    fn find(&self, path_nodes: &[PathNode]) -> Result<SisoResult<T>, SisoError> {
         for a_route in &self.routes {
             if path_nodes[0] == a_route.node {
                 if path_nodes.len() == 1 {
-                    return Ok(a_route.value.clone());
+                    return Ok(SisoResult {
+                        nodes: Vec::new(),
+                        values: HashMap::new(),
+                        handler: a_route.value.clone(),
+                    });
                 } else {
                     return a_route.find(&path_nodes[1..]);
                 }
@@ -221,7 +233,11 @@ mod tests {
 
         assert_eq!(
             router.find(route1.as_slice()).unwrap(),
-            RouteValue::Value(String::from("test1"))
+            SisoResult {
+                nodes: Vec::new(),
+                values: HashMap::new(),
+                handler: RouteValue::Value(String::from("test1"))
+            }
         );
         router.find(no_route.as_slice()).expect_err("E_NOT_FOUND");
         router
