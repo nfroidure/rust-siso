@@ -6,38 +6,39 @@ use std::collections::HashMap;
 use std::error;
 use std::fmt;
 use route::Route;
+use route::FindContext;
 
-pub struct Siso<T: Clone + PartialEq> {
-    route: Route<T>,
+pub struct Siso<T: MatchPathNode + Clone, V: Clone + PartialEq> {
+    route: Route<T, V>,
 }
 
-impl<T: Clone + PartialEq> Siso<T> {
-    pub fn register(&mut self, path_nodes: &[PathNode], value: T) -> Result<(), SisoError> {
+impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Siso<T, V> {
+    pub fn register(&mut self, path_nodes: &[T], value: V) -> Result<(), SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for registering a value...");
         }
         self.route.register(path_nodes, value)
     }
 
-    pub fn find(&self, path_nodes: &[PathNode]) -> Result<SisoResult<T>, SisoError> {
+    pub fn find(&self, path_nodes: &[String]) -> Result<SisoResult<V>, SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for finding a value...");
         }
-        self.route.find(path_nodes)
+        self.route.find(path_nodes, FindContext::new())
     }
 
-    pub fn new() -> Siso<T> {
+    pub fn new() -> Siso<T, V> {
         Siso {
-            route: Route::new(PathNode::PathPart(String::from("[root]")), None),
+            route: Route::new(None, None),
         }
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct SisoResult<T: Clone + PartialEq> {
+pub struct SisoResult<V: Clone + PartialEq> {
     nodes: Vec<&'static str>,
     values: HashMap<String, bool>,
-    handler: T,
+    handler: V,
 }
 
 #[derive(Debug, Clone)]
@@ -61,33 +62,42 @@ impl error::Error for SisoError {
     }
 }
 
-#[derive(Debug, Clone)]
+pub trait MatchPathNode {
+   fn path_node_match(&self, &str) -> bool {
+       false
+   }
+   fn path_node_equals(&self, &Self) -> bool;
+}
+
+impl MatchPathNode for String {
+    fn path_node_match(&self, other: &str) -> bool {
+        return *self == *other;
+    }
+   fn path_node_equals(&self, other: &String) -> bool {
+       self == other
+   }
+}
+
+#[derive(Debug)]
 pub struct PathPattern {
     name: String,
     pattern: Regex,
     // TODO: Add a way to parse the node and cast its value
 }
 
-#[derive(Debug, Clone)]
-pub enum PathNode {
-    PathPart(String),
-    PathPattern(PathPattern),
+impl PartialEq for PathPattern {
+    fn eq(&self, ref other: &PathPattern) -> bool {
+        self.name == other.name
+    }
 }
 
-// TODO: Try #[derive(PartialEq)] once the lib is feature complete
-impl PartialEq for PathNode {
-    fn eq(&self, other: &PathNode) -> bool {
-        match self {
-            PathNode::PathPart(self_part) => match other {
-                PathNode::PathPart(other_part) => self_part == other_part,
-                _ => false,
-            },
-            PathNode::PathPattern(self_pattern) => match other {
-                PathNode::PathPattern(other_pattern) => self_pattern.name == other_pattern.name,
-                _ => false,
-            },
-        }
+impl MatchPathNode for PathPattern {
+    fn path_node_match(&self, other: &str) -> bool {
+        return self.pattern.is_match(other);
     }
+   fn path_node_equals(&self, other: &PathPattern) -> bool {
+       *self == *other
+   }
 }
 
 #[cfg(test)]
@@ -95,13 +105,11 @@ mod tests {
     use super::*;
     #[test]
     fn path_node_comparison_works() {
-        assert_eq!(
-            PathNode::PathPart(String::from("foo")),
-            PathNode::PathPart(String::from("foo"))
+        assert!(
+            String::from("foo").path_node_match("foo")
         );
-        assert_ne!(
-            PathNode::PathPart(String::from("foo")),
-            PathNode::PathPart(String::from("bar"))
+        assert!(
+            !String::from("foo").path_node_match("bar")
         );
         // TODO: Also compare PathPattern
     }
@@ -109,23 +117,26 @@ mod tests {
     fn router_works() {
         // TODO: Also test PathPattern nodes
         let route1 = vec![
-            PathNode::PathPart(String::from("foo")),
-            PathNode::PathPart(String::from("bar")),
+            String::from("foo"),
+            String::from("bar"),
         ];
         let route2 = vec![
-            PathNode::PathPart(String::from("foo")),
-            PathNode::PathPart(String::from("lol")),
+            String::from("foo"),
+            String::from("lol"),
         ];
         let route3 = vec![
-            PathNode::PathPattern(PathPattern {
-                name: String::from("foo"),
-                pattern: Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap(),
-            }),
-            PathNode::PathPart(String::from("lol")),
+            PathPattern {
+                name: String::from("node1"),
+                pattern: Regex::new(r"^test\d+$").unwrap(),
+            },
+            PathPattern {
+                name: String::from("node2"),
+                pattern: Regex::new(r"^test\d+$").unwrap(),
+            },
         ];
         let no_route = vec![
-            PathNode::PathPart(String::from("no")),
-            PathNode::PathPart(String::from("thing")),
+            String::from("no"),
+            String::from("thing"),
         ];
         let mut router = Siso::new();
 
@@ -141,12 +152,12 @@ mod tests {
                 .unwrap(),
             ()
         );
-        assert_eq!(
+        /*assert_eq!(
             router
                 .register(route3.as_slice(), String::from("test3"))
                 .unwrap(),
             ()
-        );
+        );*/
 
         assert_eq!(
             router.find(route1.as_slice()).unwrap(),

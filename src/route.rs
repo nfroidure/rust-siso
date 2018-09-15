@@ -1,22 +1,21 @@
 use super::*;
 
-#[derive(Debug)]
-pub struct Route<T: Clone + PartialEq> {
-    node: PathNode,
-    routes: Vec<Route<T>>,
-    value: Option<T>,
+pub struct Route<T: MatchPathNode + Clone, V: Clone + PartialEq> {
+    node: Option<T>,
+    routes: Vec<Route<T, V>>,
+    value: Option<V>,
 }
 
-impl<T: Clone + PartialEq> Route<T> {
-    pub fn register(&mut self, path_nodes: &[PathNode], value: T) -> Result<(), SisoError> {
+impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Route<T, V> {
+    pub fn register(&mut self, path_nodes: &[T], value: V) -> Result<(), SisoError> {
         let path_node = &path_nodes[0];
         let is_leaf_path_node = path_nodes.len() == 1;
         let index = self
             .routes
             .iter()
-            .position(|a_route| *path_node == a_route.node)
+            .position(|a_route| a_route.node.as_ref().unwrap().path_node_equals(path_node))
             .unwrap_or_else(|| {
-                let route = Route::new(path_node.clone(), None);
+                let route = Route::new(Some(path_node.clone()), None);
                 self.routes.push(route);
                 self.routes.len() - 1
             });
@@ -35,14 +34,14 @@ impl<T: Clone + PartialEq> Route<T> {
             self.routes[index].register(&path_nodes[1..], value)
         }
     }
-    pub fn find(&self, path_nodes: &[PathNode]) -> Result<SisoResult<T>, SisoError> {
+    pub fn find(&self, path_nodes: &[String], context: FindContext) -> Result<SisoResult<V>, SisoError> {
         for a_route in &self.routes {
-            if path_nodes[0] == a_route.node {
+            if a_route.node.as_ref().unwrap().path_node_match(&path_nodes[0][..]) {
                 if path_nodes.len() == 1 {
                     return match &a_route.value {
                         Some(value) => Ok(SisoResult {
-                            nodes: Vec::new(),
-                            values: HashMap::new(),
+                            nodes: context.nodes,
+                            values: context.values,
                             handler: value.clone(),
                         }),
                         None => Err(SisoError {
@@ -50,7 +49,7 @@ impl<T: Clone + PartialEq> Route<T> {
                         }),
                     };
                 } else {
-                    return a_route.find(&path_nodes[1..]);
+                    return a_route.find(&path_nodes[1..], context);
                 }
             }
         }
@@ -59,7 +58,7 @@ impl<T: Clone + PartialEq> Route<T> {
         })
     }
 
-    pub fn new(node: PathNode, value: Option<T>) -> Route<T> {
+    pub fn new(node: Option<T>, value: Option<V>) -> Route<T, V> {
         Route {
             routes: Vec::new(),
             node,
@@ -68,3 +67,17 @@ impl<T: Clone + PartialEq> Route<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct FindContext {
+    nodes: Vec<&'static str>,
+    values: HashMap<String, bool>,
+}
+
+impl FindContext {
+    pub fn new() -> FindContext {
+        FindContext {
+            nodes: Vec::new(),
+            values: HashMap::new(),
+        }
+    }
+}
