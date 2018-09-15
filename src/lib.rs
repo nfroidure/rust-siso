@@ -1,26 +1,18 @@
 extern crate regex;
+mod route;
+
 use regex::Regex;
+use std::collections::HashMap;
 use std::error;
 use std::fmt;
-use std::collections::HashMap;
+use route::Route;
 
 pub struct Siso<T: Clone + PartialEq> {
     route: Route<T>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct SisoResult<T: Clone + PartialEq> {
-    nodes: Vec<&'static str>,
-    values: HashMap<String, bool>,
-    handler: RouteValue<T>,
-}
-
 impl<T: Clone + PartialEq> Siso<T> {
-    pub fn register(
-        &mut self,
-        path_nodes: &[PathNode],
-        value: RouteValue<T>,
-    ) -> Result<(), SisoError> {
+    pub fn register(&mut self, path_nodes: &[PathNode], value: T) -> Result<(), SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for registering a value...");
         }
@@ -41,86 +33,11 @@ impl<T: Clone + PartialEq> Siso<T> {
     }
 }
 
-#[derive(Debug)]
-struct Route<T: Clone + PartialEq> {
-    node: PathNode,
-    routes: Vec<Route<T>>,
-    value: RouteValue<T>,
-}
-
-impl<T: Clone + PartialEq> Route<T> {
-    fn register(&mut self, path_nodes: &[PathNode], value: RouteValue<T>) -> Result<(), SisoError> {
-        let path_node = &path_nodes[0];
-        let is_leaf_path_node = path_nodes.len() == 1;
-        let index = self.routes.iter()
-            .position(|a_route| *path_node == a_route.node)
-            .unwrap_or_else(|| {
-                let route = Route::new(path_node.clone(), None);
-                self.routes.push(route);
-                self.routes.len() - 1
-            });
-
-        if is_leaf_path_node {
-            match self.routes[index].value {
-                RouteValue::Value(_) => Err(SisoError {
-                    code: "E_VALUE_EXISTS".to_string(),
-                }),
-                RouteValue::None => {
-                    self.routes[index].value = value;
-                    Ok(())
-                }
-            }
-        } else {
-            self.routes[index].register(&path_nodes[1..], value)
-        }
-    }
-    fn find(&self, path_nodes: &[PathNode]) -> Result<SisoResult<T>, SisoError> {
-        for a_route in &self.routes {
-            if path_nodes[0] == a_route.node {
-                if path_nodes.len() == 1 {
-                    return Ok(SisoResult {
-                        nodes: Vec::new(),
-                        values: HashMap::new(),
-                        handler: a_route.value.clone(),
-                    });
-                } else {
-                    return a_route.find(&path_nodes[1..]);
-                }
-            }
-        }
-        Err(SisoError {
-            code: "E_NOT_FOUND".to_string(),
-        })
-    }
-
-    fn new(node: PathNode, value: Option<RouteValue<T>>) -> Route<T> {
-        Route {
-            routes: Vec::new(),
-            node,
-            value: value.unwrap_or(RouteValue::None),
-        }
-    }
-}
-
-// TODO: Allow generic value instead of strings only
-#[derive(Debug, Clone)]
-pub enum RouteValue<T: Clone + PartialEq> {
-    Value(T),
-    None,
-}
-
-// Here we intentionnally want Node != None since no value for the path x
-// is not the same concept that no value for the path y
-impl<T: Clone + PartialEq> PartialEq for RouteValue<T> {
-    fn eq(&self, other: &RouteValue<T>) -> bool {
-        match self {
-            RouteValue::Value(self_value) => match other {
-                RouteValue::Value(other_value) => self_value == other_value,
-                RouteValue::None => false,
-            },
-            RouteValue::None => false,
-        }
-    }
+#[derive(Debug, PartialEq)]
+pub struct SisoResult<T: Clone + PartialEq> {
+    nodes: Vec<&'static str>,
+    values: HashMap<String, bool>,
+    handler: T,
 }
 
 #[derive(Debug, Clone)]
@@ -202,7 +119,7 @@ mod tests {
         let route3 = vec![
             PathNode::PathPattern(PathPattern {
                 name: String::from("foo"),
-                pattern: Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap()
+                pattern: Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap(),
             }),
             PathNode::PathPart(String::from("lol")),
         ];
@@ -214,19 +131,19 @@ mod tests {
 
         assert_eq!(
             router
-                .register(route1.as_slice(), RouteValue::Value(String::from("test1")))
+                .register(route1.as_slice(), String::from("test1"))
                 .unwrap(),
             ()
         );
         assert_eq!(
             router
-                .register(route2.as_slice(), RouteValue::Value(String::from("test2")))
+                .register(route2.as_slice(), String::from("test2"))
                 .unwrap(),
             ()
         );
         assert_eq!(
             router
-                .register(route3.as_slice(), RouteValue::Value(String::from("test3")))
+                .register(route3.as_slice(), String::from("test3"))
                 .unwrap(),
             ()
         );
@@ -236,12 +153,12 @@ mod tests {
             SisoResult {
                 nodes: Vec::new(),
                 values: HashMap::new(),
-                handler: RouteValue::Value(String::from("test1"))
+                handler: String::from("test1"),
             }
         );
         router.find(no_route.as_slice()).expect_err("E_NOT_FOUND");
         router
-            .register(route1.as_slice(), RouteValue::Value(String::from("test3")))
+            .register(route1.as_slice(), String::from("test3"))
             .expect_err("E_NOT_FOUND");
     }
 }
