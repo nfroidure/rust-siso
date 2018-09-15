@@ -2,18 +2,22 @@ extern crate regex;
 mod route;
 
 use regex::Regex;
+use route::FindContext;
+use route::Route;
 use std::collections::HashMap;
 use std::error;
 use std::fmt;
-use route::Route;
-use route::FindContext;
 
-pub struct Siso<T: MatchPathNode + Clone, V: Clone + PartialEq> {
-    route: Route<T, V>,
+pub struct Siso<V: Clone + PartialEq> {
+    route: Route<V>,
 }
 
-impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Siso<T, V> {
-    pub fn register(&mut self, path_nodes: &[T], value: V) -> Result<(), SisoError> {
+impl<V: Clone + PartialEq> Siso<V> {
+    pub fn register(
+        &mut self,
+        path_nodes: &[Box<MatchPathNode>],
+        value: V,
+    ) -> Result<(), SisoError> {
         if path_nodes.is_empty() {
             panic!("Need at least one node for registering a value...");
         }
@@ -27,7 +31,7 @@ impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Siso<T, V> {
         self.route.find(path_nodes, FindContext::new())
     }
 
-    pub fn new() -> Siso<T, V> {
+    pub fn new() -> Siso<V> {
         Siso {
             route: Route::new(None, None),
         }
@@ -63,22 +67,32 @@ impl error::Error for SisoError {
 }
 
 pub trait MatchPathNode {
-   fn path_node_match(&self, &str) -> bool {
-       false
-   }
-   fn path_node_equals(&self, &Self) -> bool;
+    fn path_node_match(&self, &str) -> bool {
+        false
+    }
+    fn to_uid(&self) -> String;
+    fn box_clone(&self) -> Box<MatchPathNode>;
+}
+
+impl Clone for Box<MatchPathNode> {
+    fn clone(&self) -> Box<MatchPathNode> {
+        self.box_clone()
+    }
 }
 
 impl MatchPathNode for String {
     fn path_node_match(&self, other: &str) -> bool {
         return *self == *other;
     }
-   fn path_node_equals(&self, other: &String) -> bool {
-       self == other
-   }
+    fn to_uid(&self) -> String {
+        self.clone()
+    }
+    fn box_clone(&self) -> Box<MatchPathNode> {
+        Box::new((*self).clone())
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PathPattern {
     name: String,
     pattern: Regex,
@@ -95,48 +109,44 @@ impl MatchPathNode for PathPattern {
     fn path_node_match(&self, other: &str) -> bool {
         return self.pattern.is_match(other);
     }
-   fn path_node_equals(&self, other: &PathPattern) -> bool {
-       *self == *other
-   }
+    fn to_uid(&self) -> String {
+        self.name.clone()
+    }
+    fn box_clone(&self) -> Box<MatchPathNode> {
+        Box::new((*self).clone())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn path_node_comparison_works() {
+        assert!(String::from("foo").path_node_match("foo"));
+        assert!(!String::from("foo").path_node_match("bar"));
         assert!(
-            String::from("foo").path_node_match("foo")
-        );
-        assert!(
-            !String::from("foo").path_node_match("bar")
-        );
-        // TODO: Also compare PathPattern
-    }
-    #[test]
-    fn router_works() {
-        // TODO: Also test PathPattern nodes
-        let route1 = vec![
-            String::from("foo"),
-            String::from("bar"),
-        ];
-        let route2 = vec![
-            String::from("foo"),
-            String::from("lol"),
-        ];
-        let route3 = vec![
             PathPattern {
                 name: String::from("node1"),
                 pattern: Regex::new(r"^test\d+$").unwrap(),
-            },
-            PathPattern {
+            }.path_node_match("test5")
+        );
+    }
+
+    #[test]
+    fn router_works() {
+        // TODO: Also test PathPattern nodes
+        let route1 : Vec<Box<MatchPathNode>> = vec![Box::new(String::from("foo")), Box::new(String::from("bar"))];
+        let route2 : Vec<Box<MatchPathNode>> = vec![Box::new(String::from("foo")), Box::new(String::from("lol"))];
+        let route3 : Vec<Box<MatchPathNode>> = vec![
+            Box::new(PathPattern {
+                name: String::from("node1"),
+                pattern: Regex::new(r"^test\d+$").unwrap(),
+            }),
+            Box::new(PathPattern {
                 name: String::from("node2"),
                 pattern: Regex::new(r"^test\d+$").unwrap(),
-            },
-        ];
-        let no_route = vec![
-            String::from("no"),
-            String::from("thing"),
+            }),
         ];
         let mut router = Siso::new();
 
@@ -152,22 +162,22 @@ mod tests {
                 .unwrap(),
             ()
         );
-        /*assert_eq!(
+        assert_eq!(
             router
                 .register(route3.as_slice(), String::from("test3"))
                 .unwrap(),
             ()
-        );*/
+        );
 
         assert_eq!(
-            router.find(route1.as_slice()).unwrap(),
+            router.find(vec!["foo".to_string(), "bar".to_string()].as_slice()).unwrap(),
             SisoResult {
                 nodes: Vec::new(),
                 values: HashMap::new(),
                 handler: String::from("test1"),
             }
         );
-        router.find(no_route.as_slice()).expect_err("E_NOT_FOUND");
+        router.find(vec!["no".to_string(), "thing".to_string()].as_slice()).expect_err("E_NOT_FOUND");
         router
             .register(route1.as_slice(), String::from("test3"))
             .expect_err("E_NOT_FOUND");

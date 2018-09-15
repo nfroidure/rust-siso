@@ -1,19 +1,23 @@
 use super::*;
 
-pub struct Route<T: MatchPathNode + Clone, V: Clone + PartialEq> {
-    node: Option<T>,
-    routes: Vec<Route<T, V>>,
+pub struct Route<V: Clone + PartialEq> {
+    node: Option<Box<MatchPathNode>>,
+    routes: Vec<Route<V>>,
     value: Option<V>,
 }
 
-impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Route<T, V> {
-    pub fn register(&mut self, path_nodes: &[T], value: V) -> Result<(), SisoError> {
+impl<V: Clone + PartialEq> Route<V> {
+    pub fn register(
+        &mut self,
+        path_nodes: &[Box<MatchPathNode>],
+        value: V,
+    ) -> Result<(), SisoError> {
         let path_node = &path_nodes[0];
         let is_leaf_path_node = path_nodes.len() == 1;
         let index = self
             .routes
             .iter()
-            .position(|a_route| a_route.node.as_ref().unwrap().path_node_equals(path_node))
+            .position(|a_route| a_route.node.as_ref().unwrap().to_uid() == path_node.to_uid())
             .unwrap_or_else(|| {
                 let route = Route::new(Some(path_node.clone()), None);
                 self.routes.push(route);
@@ -34,9 +38,18 @@ impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Route<T, V> {
             self.routes[index].register(&path_nodes[1..], value)
         }
     }
-    pub fn find(&self, path_nodes: &[String], context: FindContext) -> Result<SisoResult<V>, SisoError> {
+    pub fn find(
+        &self,
+        path_nodes: &[String],
+        context: FindContext,
+    ) -> Result<SisoResult<V>, SisoError> {
         for a_route in &self.routes {
-            if a_route.node.as_ref().unwrap().path_node_match(&path_nodes[0][..]) {
+            if a_route
+                .node
+                .as_ref()
+                .unwrap()
+                .path_node_match(&path_nodes[0][..])
+            {
                 if path_nodes.len() == 1 {
                     return match &a_route.value {
                         Some(value) => Ok(SisoResult {
@@ -58,7 +71,7 @@ impl<T: MatchPathNode + Clone, V: Clone + PartialEq> Route<T, V> {
         })
     }
 
-    pub fn new(node: Option<T>, value: Option<V>) -> Route<T, V> {
+    pub fn new(node: Option<Box<MatchPathNode>>, value: Option<V>) -> Route<V> {
         Route {
             routes: Vec::new(),
             node,
